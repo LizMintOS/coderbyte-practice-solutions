@@ -6,11 +6,21 @@ var buffer = new Queue<int>();  // Shared buffer
 var maxBufferSize = 5;         // Max size of the buffer
 var lockObj = new object();
 
-//Producer
-await Task.Run(() =>
+// For cancellation
+var cts = new CancellationTokenSource();
+Console.CancelKeyPress += (s, e) =>
 {
+    e.Cancel = true;
+    cts.Cancel();
+    Console.WriteLine("\nCancellation requested. Shutting down...");
+};
+
+//Producer
+async Task Producer(CancellationToken token)
+{
+    
     Random rand = new();
-    while (true)
+    while (!token.IsCancellationRequested)
     {
         lock (lockObj)
         {
@@ -26,15 +36,18 @@ await Task.Run(() =>
 
             Monitor.PulseAll(lockObj);
         }
-        Thread.Sleep(1000);
+
+        await Task.Delay(1000, token);
     }
-});
+}
 
 //Consumer
-await Task.Run(() =>
+async Task Consumer(CancellationToken token)
 {
-    while (true)
+
+    while (!token.IsCancellationRequested)
     {
+        int item = -1;
         lock (lockObj)
         {
             while (buffer.Count == 0)
@@ -43,13 +56,20 @@ await Task.Run(() =>
                 Monitor.Wait(lockObj);
             }
 
-            int item = buffer.Dequeue();
+            item = buffer.Dequeue();
             Console.WriteLine($"Consumed: {item}");
 
             Monitor.PulseAll(lockObj);
         }
-        Thread.Sleep(1500);
+        await Task.Delay(1500, token);
     }
-});
+}
 
-Console.ReadLine();
+Console.WriteLine("Starting Producer-Consumer. Press Ctrl+C to stop...");
+
+Task producerTask = Producer(cts.Token);
+Task consumerTask = Consumer(cts.Token);
+
+await Task.WhenAll(producerTask, consumerTask);
+
+Console.WriteLine("Finished");
