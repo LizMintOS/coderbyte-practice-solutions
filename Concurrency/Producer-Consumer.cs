@@ -18,50 +18,65 @@ Console.CancelKeyPress += (s, e) =>
 //Producer
 async Task Producer(CancellationToken token)
 {
-    
     Random rand = new();
-    while (!token.IsCancellationRequested)
+
+    try
     {
-        lock (lockObj)
+        while (!token.IsCancellationRequested)
         {
-            while (buffer.Count == maxBufferSize)
+            lock (lockObj)
             {
-                Console.WriteLine("Buffer is full. Producer is waiting...");
-                Monitor.Wait(lockObj);
+                while (buffer.Count == maxBufferSize)
+                {
+                    Console.WriteLine("Buffer is full. Producer is waiting...");
+                    Monitor.Wait(lockObj);
+                }
+
+                int item = rand.Next(1, 100);
+                buffer.Enqueue(item);
+                Console.WriteLine($"Produced: {item}");
+
+                Monitor.PulseAll(lockObj);
             }
 
-            int item = rand.Next(1, 100);
-            buffer.Enqueue(item);
-            Console.WriteLine($"Produced: {item}");
-
-            Monitor.PulseAll(lockObj);
+            await Task.Delay(1000, token);
         }
-
-        await Task.Delay(1000, token);
+    } 
+    catch (TaskCanceledException)
+    {
+        Console.WriteLine("Producer terminated");
+        Thread.Sleep(1000);
     }
 }
 
 //Consumer
 async Task Consumer(CancellationToken token)
 {
-
-    while (!token.IsCancellationRequested)
+    try
     {
-        int item = -1;
-        lock (lockObj)
+        while (!token.IsCancellationRequested)
         {
-            while (buffer.Count == 0)
+            int item = -1;
+            lock (lockObj)
             {
-                Console.WriteLine("Buffer is empty. Consumer is waiting...");
-                Monitor.Wait(lockObj);
+                while (buffer.Count == 0)
+                {
+                    Console.WriteLine("Buffer is empty. Consumer is waiting...");
+                    Monitor.Wait(lockObj);
+                }
+
+                item = buffer.Dequeue();
+                Console.WriteLine($"Consumed: {item}");
+
+                Monitor.PulseAll(lockObj);
             }
-
-            item = buffer.Dequeue();
-            Console.WriteLine($"Consumed: {item}");
-
-            Monitor.PulseAll(lockObj);
+            await Task.Delay(1500, token);
         }
-        await Task.Delay(1500, token);
+    }
+    catch (TaskCanceledException)
+    {
+        Console.WriteLine("Consumer terminated");
+        Thread.Sleep(1000);
     }
 }
 
@@ -71,5 +86,3 @@ Task producerTask = Producer(cts.Token);
 Task consumerTask = Consumer(cts.Token);
 
 await Task.WhenAll(producerTask, consumerTask);
-
-Console.WriteLine("Finished");
